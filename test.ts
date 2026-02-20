@@ -8,6 +8,7 @@ app MyApp {
 page Home {
   header "Welcome"
   button "Log in" -> Login
+  button "Search" -> Search?q=""&page=1
 }
 
 component LoginForm {
@@ -18,7 +19,7 @@ component LoginForm {
 
   on auth {
     success -> Dashboard
-    error -> LoginError
+    error   -> LoginError
   }
 }
 
@@ -36,6 +37,23 @@ page Dashboard {
   header "Dashboard"
   text "Hello!"
   button "Logout" -> Home
+  button "Search Items" -> Search?q=""&page=1
+}
+
+page Search {
+  query q      : string  = ""
+  query page   : number  = 1
+  query active : boolean
+
+  header "Search"
+  text "Showing results"
+
+  if query.active == true {
+    text "Showing active items only"
+  }
+
+  button "Next" -> Search?q=query.q&page=query.page+1
+  button "Home" -> Home
 }
 `.trim();
 

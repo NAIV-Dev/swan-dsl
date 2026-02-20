@@ -45,7 +45,7 @@ export interface IdentifierExpr {
     pos: Position;
 }
 
-/** Dot-access: user.role, session.token, env.name */
+/** Dot-access: user.role, session.token, env.name, query.page */
 export interface MemberExpr {
     kind: "MemberExpr";
     object: IdentifierExpr;
@@ -61,7 +61,8 @@ export type BinaryOperator =
     | "<="
     | ">="
     | "&&"
-    | "||";
+    | "||"
+    | "+";
 
 export interface BinaryExpr {
     kind: "BinaryExpr";
@@ -86,12 +87,32 @@ export type Expression =
     | UnaryExpr;
 
 // ---------------------------------------------------------------------------
+// Query parameter type annotation
+// ---------------------------------------------------------------------------
+
+/** The type keyword used in a query declaration: `query key : <QueryType>` */
+export type QueryType = "string" | "number" | "boolean";
+
+// ---------------------------------------------------------------------------
 // Navigation target
 // ---------------------------------------------------------------------------
+
+/**
+ * A single query argument passed in a navigation target's query string.
+ * e.g. `-> Search?q="hello"&page=2`  →  [{ key:"q", value:StringLiteral },
+ *                                         { key:"page", value:NumberLiteral }]
+ */
+export interface QueryArg {
+    key: string;
+    value: Expression;
+    pos: Position;
+}
 
 export interface NavTarget {
     /** The page identifier this navigation points to */
     target: string;
+    /** Optional inline query args: `-> Page?key=expr&key2=expr2` */
+    queryArgs?: QueryArg[];
     pos: Position;
 }
 
@@ -183,6 +204,26 @@ export interface ConditionalStmt {
     pos: Position;
 }
 
+/**
+ * Declares a URL query parameter accepted by a page.
+ *
+ * Syntax:  `query <name> [: <type>] [= <default>]`
+ *
+ * Example: `query page : number = 1`
+ *
+ * Only valid inside `page` blocks (enforced by SR-7).
+ */
+export interface QueryStmt {
+    kind: "QueryStmt";
+    /** The query parameter key (maps to `?key=value` in the URL) */
+    name: string;
+    /** Optional type annotation */
+    valueType?: QueryType;
+    /** Optional default value when the parameter is absent */
+    defaultValue?: Literal;
+    pos: Position;
+}
+
 export type Statement =
     | HeaderStmt
     | TextStmt
@@ -194,7 +235,8 @@ export type Statement =
     | SubmitStmt
     | ClickStmt
     | HandlerStmt
-    | ConditionalStmt;
+    | ConditionalStmt
+    | QueryStmt;
 
 // ---------------------------------------------------------------------------
 // Top-level declarations
@@ -252,7 +294,10 @@ export type SemanticRuleCode =
     | "SR-3"
     | "SR-4"
     | "SR-5"
-    | "SR-6";
+    | "SR-6"
+    | "SR-7"
+    | "SR-8"
+    | "SR-9";
 
 export class SemanticError extends Error {
     constructor(

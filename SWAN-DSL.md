@@ -160,6 +160,10 @@ PageDecl       ::= "page" Identifier Block
 ComponentDecl  ::= "component" Identifier Block
 
 Block          ::= "{" { Statement } "}"
+
+QueryDecl      ::= "query" Identifier [ ":" Type ] [ "=" Literal ]
+
+Type           ::= "string" | "number" | "boolean"
 ```
 
 ---
@@ -173,6 +177,7 @@ Statement ::=
   | ActionStatement
   | HandlerStatement
   | ConditionalStatement
+  | QueryStatement
 ```
 
 ---
@@ -272,6 +277,54 @@ if user.role == "admin" {
 
 ---
 
+## 6.6 Page Query Statement
+
+A `query` statement declares a **URL query parameter** accepted by a page.
+It maps directly to the query string portion of the URL (e.g. `/search?q=hello&page=2`).
+
+Only valid inside a `page` block — **not** inside components.
+
+```ebnf
+QueryStatement ::=
+  "query" Identifier [ ":" Type ] [ "=" Literal ]
+
+Type ::= "string" | "number" | "boolean"
+```
+
+| Part        | Required | Description                              |
+| ----------- | -------- | ---------------------------------------- |
+| Identifier  | Yes      | Query parameter key (maps to URL `?key`) |
+| `:` Type    | No       | Expected value type (default: `string`)  |
+| `=` Literal | No       | Default value when parameter is absent   |
+
+Example:
+
+```dsl
+page Search {
+  query q              // ?q=<any string>
+  query page : number = 1   // ?page=2  (default: 1)
+  query active : boolean    // ?active=true
+
+  header "Search Results"
+  text "Showing results for query"
+}
+```
+
+Runtime behaviour:
+
+* Query values are read from the URL on page entry.
+* If a parameter is absent and a default is declared, the default is used.
+* If a parameter is absent and no default is declared, the value is `null`.
+* Query values are available in expressions via the `query` scope:
+
+```dsl
+if query.active == true {
+  text "Showing active items only"
+}
+```
+
+---
+
 # 7. Expressions
 
 ```ebnf
@@ -298,13 +351,25 @@ Scope:
 # 8. Navigation Targets
 
 ```ebnf
-NavTarget ::= "->" Identifier
+NavTarget    ::= "->" Identifier [ QueryArgs ]
+
+QueryArgs    ::= "?" QueryArg { "&" QueryArg }
+
+QueryArg     ::= Identifier "=" Expression
 ```
 
 Semantics:
 
 * Identifier must resolve to a `page`
 * Resolution is static
+* `QueryArgs` are optional; they set query parameter values on the target page
+* Each key in `QueryArgs` must match a `query` declaration on the target page
+
+Example:
+
+```dsl
+button "Next Page" -> Search?q="hello"&page=2
+```
 
 ---
 
@@ -353,6 +418,25 @@ Namespaces:
 * pages
 * components
 * actions
+
+### SR-7: Query in Pages Only
+
+```
+query statements are only valid inside page blocks
+```
+
+### SR-8: Unique Query Keys
+
+```
+Query parameter identifiers must be unique within a page
+```
+
+### SR-9: Valid Query Args in Navigation
+
+```
+Each key in a navigation QueryArgs list must match
+a query declaration on the target page
+```
 
 ---
 
@@ -473,6 +557,7 @@ app MyApp {
 page Home {
   header "Welcome"
   button "Log in" -> Login
+  button "Search" -> Search?q=""&page=1
 }
 
 component LoginForm {
@@ -483,7 +568,7 @@ component LoginForm {
 
   on auth {
     success -> Dashboard
-    error -> LoginError
+    error   -> LoginError
   }
 }
 
@@ -501,6 +586,23 @@ page Dashboard {
   header "Dashboard"
   text "Hello!"
   button "Logout" -> Home
+  button "Search Items" -> Search?q=""&page=1
+}
+
+page Search {
+  query q            : string  = ""
+  query page         : number  = 1
+  query active       : boolean
+
+  header "Search"
+  text "Showing results"
+
+  if query.active == true {
+    text "(active items only)"
+  }
+
+  button "Next" -> Search?q=query.q&page=query.page+1
+  button "Home" -> Home
 }
 ```
 

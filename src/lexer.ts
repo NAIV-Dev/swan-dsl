@@ -22,6 +22,10 @@ export const KEYWORDS = [
     "click",
     "on",
     "if",
+    "query",
+    "string",
+    "number",
+    "boolean",
     "true",
     "false",
 ] as const;
@@ -46,6 +50,11 @@ export type TokenType =
     | "AND"
     | "OR"
     | "BANG"
+    | "ASSIGN"
+    | "COLON"
+    | "QUESTION"
+    | "AMPERSAND"
+    | "PLUS"
     | "NL"
     | "WS"
     | "COMMENT";
@@ -73,6 +82,12 @@ export const lexer = moo.compile({
     LBRACE: "{",
     RBRACE: "}",
     DOT: ".",
+    COLON: ":",
+    QUESTION: "?",
+    AMPERSAND: "&",
+    PLUS: "+",
+    // Assignment = (must come after EQ "==" check; moo checks longest match first)
+    ASSIGN: "=",
     // Literals
     STRING: { match: /"[^"]*"/, value: (s) => s.slice(1, -1) },
     NUMBER: {

@@ -31,6 +31,9 @@ export type {
     OutcomeClause,
     PageDecl,
     Position,
+    QueryArg,
+    QueryStmt,
+    QueryType,
     SemanticRuleCode,
     Statement,
     StringLiteral,
@@ -52,7 +55,7 @@ export { ParseError, SemanticError } from "./types.js";
  * @param options - Optional: `{ strictMode: true }` enables SR-4 orphan page check
  * @returns A fully-typed `Program` AST
  * @throws {ParseError} on syntax errors
- * @throws {SemanticError} on semantic violations (SR-1 through SR-6)
+ * @throws {SemanticError} on semantic violations (SR-1 through SR-9)
  */
 export function parse(source: string, options: ParseOptions = {}): Program {
     const program = parseSource(source);
@@ -71,7 +74,7 @@ export function parse(source: string, options: ParseOptions = {}): Program {
  * @param options - Optional: `{ strictMode: true }` enables SR-4 orphan page check
  * @returns A fully-typed `Program` AST
  * @throws {ParseError} on syntax errors
- * @throws {SemanticError} on semantic violations (SR-1 through SR-6)
+ * @throws {SemanticError} on semantic violations (SR-1 through SR-9)
  */
 export async function parseFile(
     filePath: string,

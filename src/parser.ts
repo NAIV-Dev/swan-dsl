@@ -28,6 +28,9 @@ import {
     type PageDecl,
     type Position,
     type Program,
+    type QueryArg,
+    type QueryStmt,
+    type QueryType,
     type Statement,
     type StringLiteral,
     type SubmitStmt,
@@ -229,6 +232,7 @@ export class Parser {
             case "click": return this.parseClickStmt();
             case "on": return this.parseHandlerStmt();
             case "if": return this.parseConditionalStmt();
+            case "query": return this.parseQueryStmt();
             default:
                 throw new ParseError(
                     `Unexpected token "${tok.value}" — not a valid statement keyword`,
@@ -337,7 +341,7 @@ export class Parser {
 
     private parseOutcomeClause(): OutcomeClause {
         const outcomeTok = this.expectIdent();
-        const arrowTok = this.expect("ARROW");
+        this.expect("ARROW");
         const targetTok = this.expectIdent();
 
         return {
@@ -357,12 +361,88 @@ export class Parser {
         return { kind: "ConditionalStmt", condition, body, pos: this.tokenPos(kw) };
     }
 
+    // -- Query statement -------------------------------------------------------
+
+    /**
+     * query <name> [: string | number | boolean] [= <literal>]
+     *
+     * Only semantically valid inside a `page` block (SR-7 enforced by semantic checker).
+     */
+    private parseQueryStmt(): QueryStmt {
+        const kw = this.expect("query");
+        const nameTok = this.expectIdent();
+
+        let valueType: QueryType | undefined;
+        let defaultValue: QueryStmt["defaultValue"];
+
+        // Optional type annotation:  `: string | number | boolean`
+        if (this.match("COLON")) {
+            const typeTok = this.peek();
+            if (
+                typeTok &&
+                (typeTok.type === "string" ||
+                    typeTok.type === "number" ||
+                    typeTok.type === "boolean")
+            ) {
+                this.advance();
+                valueType = typeTok.value as QueryType;
+            } else {
+                const pos = typeTok ? this.tokenPos(typeTok) : this.currentPos();
+                const got = typeTok ? `"${typeTok.value}"` : "end of input";
+                throw new ParseError(
+                    `Expected type keyword (string | number | boolean) after ":" but got ${got}`,
+                    pos,
+                );
+            }
+        }
+
+        // Optional default value:  `= <literal>`
+        if (this.match("ASSIGN")) {
+            defaultValue = this.parseLiteral();
+        }
+
+        return {
+            kind: "QueryStmt",
+            name: nameTok.value,
+            valueType,
+            defaultValue,
+            pos: this.tokenPos(kw),
+        };
+    }
+
     // ─── Navigation target ────────────────────────────────────────────────────
 
+    /**
+     * NavTarget ::= "->" Identifier [ "?" QueryArg { "&" QueryArg } ]
+     * QueryArg  ::= Identifier "=" Expression
+     */
     private parseNavTarget(): NavTarget {
         const arrowTok = this.expect("ARROW");
         const targetTok = this.expectIdent();
-        return { target: targetTok.value, pos: this.tokenPos(arrowTok) };
+
+        let queryArgs: QueryArg[] | undefined;
+
+        // Optional query string: `?key=expr&key2=expr2`
+        if (this.match("QUESTION")) {
+            queryArgs = [];
+            queryArgs.push(this.parseQueryArg());
+            while (this.match("AMPERSAND")) {
+                queryArgs.push(this.parseQueryArg());
+            }
+        }
+
+        return {
+            target: targetTok.value,
+            queryArgs: queryArgs?.length ? queryArgs : undefined,
+            pos: this.tokenPos(arrowTok),
+        };
+    }
+
+    private parseQueryArg(): QueryArg {
+        const keyTok = this.expectIdent();
+        this.expect("ASSIGN");
+        const value = this.parseExpression();
+        return { key: keyTok.value, value, pos: this.tokenPos(keyTok) };
     }
 
     // ─── Expressions (operator precedence, left-to-right) ────────────────────
@@ -371,7 +451,8 @@ export class Parser {
     //    1. || (binary OR)
     //    2. && (binary AND)
     //    3. == != < > <= >= (comparison)
-    //    4. primary / unary !
+    //    4. + (additive)
+    //    5. primary / unary !
 
     parseExpression(): Expression {
         return this.parseOr();
@@ -421,12 +502,12 @@ export class Parser {
     ]);
 
     private parseComparison(): Expression {
-        let left = this.parseUnary();
+        let left = this.parseAdditive();
         const tok = this.peek();
         if (tok && this.COMPARISON_OPS.has(tok.type ?? "")) {
             const opTok = this.advance();
             const operator = this.COMPARISON_OPS.get(opTok.type ?? "")!;
-            const right = this.parseUnary();
+            const right = this.parseAdditive();
             const expr: BinaryExpr = {
                 kind: "BinaryExpr",
                 operator,
@@ -435,6 +516,24 @@ export class Parser {
                 pos: this.tokenPos(opTok),
             };
             return expr;
+        }
+        return left;
+    }
+
+    /** Handles `+` for expressions like `query.page + 1` in nav query args. */
+    private parseAdditive(): Expression {
+        let left = this.parseUnary();
+        while (this.check("PLUS")) {
+            const opTok = this.advance();
+            const right = this.parseUnary();
+            const expr: BinaryExpr = {
+                kind: "BinaryExpr",
+                operator: "+",
+                left,
+                right,
+                pos: this.tokenPos(opTok),
+            };
+            left = expr;
         }
         return left;
     }
@@ -496,8 +595,8 @@ export class Parser {
             return lit;
         }
 
-        // Identifier or member expression (user.role)
-        if (tok.type === "IDENT") {
+        // Identifier or member expression (user.role, query.page, etc.)
+        if (tok.type === "IDENT" || tok.type === "query") {
             this.advance();
             const base: IdentifierExpr = {
                 kind: "IdentifierExpr",
@@ -520,6 +619,35 @@ export class Parser {
 
         throw new ParseError(
             `Unexpected token "${tok.value}" in expression`,
+            this.tokenPos(tok),
+        );
+    }
+
+    // ─── Literal helper ───────────────────────────────────────────────────────
+
+    /** Parse a bare literal (string, number, boolean). Used in `query` default values. */
+    private parseLiteral(): StringLiteral | NumberLiteral | BooleanLiteral {
+        const tok = this.peek();
+        if (!tok) {
+            throw new ParseError("Expected literal but reached end of input", {
+                line: 0,
+                col: 0,
+            });
+        }
+        if (tok.type === "STRING") {
+            this.advance();
+            return { kind: "StringLiteral", value: tok.value, pos: this.tokenPos(tok) };
+        }
+        if (tok.type === "NUMBER") {
+            this.advance();
+            return { kind: "NumberLiteral", value: parseFloat(tok.value), pos: this.tokenPos(tok) };
+        }
+        if (tok.type === "true" || tok.type === "false") {
+            this.advance();
+            return { kind: "BooleanLiteral", value: tok.type === "true", pos: this.tokenPos(tok) };
+        }
+        throw new ParseError(
+            `Expected literal (string, number, or boolean) but got "${tok.value}"`,
             this.tokenPos(tok),
         );
     }
@@ -547,10 +675,11 @@ export class Parser {
         const isIdentLike =
             tokType === "IDENT" ||
             // keywords can appear as outcome clause labels (e.g. "success", "error")
-            // so accept them here
+            // so accept them here; also "query" for member access (query.page)
             [
                 "app", "page", "component", "entry", "use", "header", "text",
                 "button", "link", "field", "input", "submit", "click", "on", "if",
+                "query", "string", "number", "boolean",
                 "true", "false", // generally disallowed as ident elsewhere; allowed in outcomes
             ].includes(tokType);
 

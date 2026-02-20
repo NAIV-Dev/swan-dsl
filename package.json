@@ -1,11 +1,11 @@
 {
   "name": "@naiv/swan-dsl",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "SWAN DSL Parser",
   "main": "dist/src/index.js",
   "scripts": {
     "build": "rm -rf dist && tsc",
-    "test": "node dist"
+    "test": "node dist/test"
   },
   "publishConfig": {
     "access": "public"

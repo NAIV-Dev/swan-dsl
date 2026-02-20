@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // SWAN DSL — Semantic Checker
-// Enforces static semantic rules SR-1 through SR-6.
+// Enforces static semantic rules SR-1 through SR-9.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -34,6 +34,8 @@ export function checkSemantics(
 class SemanticChecker {
     private readonly pageNames: Set<string>;
     private readonly componentNames: Set<string>;
+    /** Map of page name → Set of declared query param names */
+    private readonly pageQueryParams: Map<string, Set<string>>;
 
     constructor(
         private readonly program: Program,
@@ -41,11 +43,20 @@ class SemanticChecker {
     ) {
         this.pageNames = new Set(program.pages.map((p) => p.name));
         this.componentNames = new Set(program.components.map((c) => c.name));
+        this.pageQueryParams = new Map();
+
+        // Pre-build query param sets for SR-8 and SR-9
+        for (const page of program.pages) {
+            const paramNames = new Set<string>();
+            this.pageQueryParams.set(page.name, paramNames);
+        }
     }
 
     check(): void {
         this.checkSR1andSR2();
         this.checkSR6Names();
+        this.checkSR7QueryInPagesOnly();
+        this.checkSR8UniqueQueryKeys();
         this.collectAndCheckNavTargets();
         this.checkSR5ComponentCycles();
         if (this.options.strictMode) {
@@ -143,8 +154,75 @@ class SemanticChecker {
         }
     }
 
+    // ─── SR-7 ─────────────────────────────────────────────────────────────────
+    // `query` statements are only valid inside page blocks, not components.
+
+    private checkSR7QueryInPagesOnly(): void {
+        for (const comp of this.program.components) {
+            this.assertNoQueryInStatements(comp.name, comp.body);
+        }
+    }
+
+    private assertNoQueryInStatements(
+        scopeName: string,
+        stmts: Statement[],
+    ): void {
+        for (const stmt of stmts) {
+            if (stmt.kind === "QueryStmt") {
+                throw new SemanticError(
+                    "SR-7",
+                    `"query" statement is not allowed inside component "${scopeName}" — only pages may declare query parameters`,
+                    stmt.pos,
+                );
+            }
+            if (stmt.kind === "ConditionalStmt") {
+                this.assertNoQueryInStatements(scopeName, stmt.body);
+            }
+        }
+    }
+
+    // ─── SR-8 ─────────────────────────────────────────────────────────────────
+    // Query parameter identifiers must be unique within a page.
+
+    private checkSR8UniqueQueryKeys(): void {
+        for (const page of this.program.pages) {
+            this.checkQueryKeyUniqueness(page);
+        }
+    }
+
+    private checkQueryKeyUniqueness(page: PageDecl): void {
+        const seen = new Set<string>();
+        const paramSet = this.pageQueryParams.get(page.name)!;
+        this.collectQueryKeys(page.body, page.name, seen, paramSet);
+    }
+
+    private collectQueryKeys(
+        stmts: Statement[],
+        pageName: string,
+        seen: Set<string>,
+        paramSet: Set<string>,
+    ): void {
+        for (const stmt of stmts) {
+            if (stmt.kind === "QueryStmt") {
+                if (seen.has(stmt.name)) {
+                    throw new SemanticError(
+                        "SR-8",
+                        `Duplicate query parameter "${stmt.name}" in page "${pageName}"`,
+                        stmt.pos,
+                    );
+                }
+                seen.add(stmt.name);
+                paramSet.add(stmt.name);
+            }
+            if (stmt.kind === "ConditionalStmt") {
+                this.collectQueryKeys(stmt.body, pageName, seen, paramSet);
+            }
+        }
+    }
+
     // ─── SR-3 ─────────────────────────────────────────────────────────────────
     // All navigation targets must be pages.
+    // Also checks SR-9 (query arg keys must match declared params on target page).
 
     private collectAndCheckNavTargets(): void {
         for (const page of this.program.pages) {
@@ -180,6 +258,7 @@ class SemanticChecker {
     }
 
     private validateNavTarget(nav: NavTarget): void {
+        // SR-3: target must be a known page
         if (!this.pageNames.has(nav.target)) {
             const hint = this.componentNames.has(nav.target)
                 ? ` ("${nav.target}" is a component, not a page)`
@@ -189,6 +268,20 @@ class SemanticChecker {
                 `Navigation target "${nav.target}" must be a page${hint}`,
                 nav.pos,
             );
+        }
+
+        // SR-9: each query arg key must match a declared query param on target page
+        if (nav.queryArgs && nav.queryArgs.length > 0) {
+            const targetParams = this.pageQueryParams.get(nav.target);
+            for (const arg of nav.queryArgs) {
+                if (!targetParams || !targetParams.has(arg.key)) {
+                    throw new SemanticError(
+                        "SR-9",
+                        `Navigation query argument "${arg.key}" is not declared as a query parameter on page "${nav.target}"`,
+                        arg.pos,
+                    );
+                }
+            }
         }
     }
 
