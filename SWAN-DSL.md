@@ -192,6 +192,8 @@ UIStatement ::=
   | "link" String NavTarget
   | "field" Identifier
   | "input" Identifier
+  | TableStatement
+  | ChartStatement
 ```
 
 Example:
@@ -199,6 +201,96 @@ Example:
 ```dsl
 header "Login"
 text "Welcome back"
+```
+
+---
+
+## 6.7 Table Statement
+
+A `table` statement renders **tabular data** with named columns.
+
+Each row is a fixed-width list of values that must match the declared columns.
+
+```ebnf
+TableStatement  ::= "table" Identifier "{" TableColumns TableRows "}"
+
+TableColumns    ::= "columns" "[" ColumnName { "," ColumnName } "]"
+
+ColumnName      ::= String
+
+TableRows       ::= { TableRow }
+
+TableRow        ::= "row" "[" CellValue { "," CellValue } "]"
+
+CellValue       ::= Literal | Expression
+```
+
+Example:
+
+```dsl
+table UserList {
+  columns ["Name", "Role", "Status"]
+  row ["Alice", "Admin",  "Active"]
+  row ["Bob",   "Viewer", "Inactive"]
+}
+```
+
+The table identifier (`UserList`) names the table for semantic checking. It does **not** introduce a navigable scope.
+
+---
+
+## 6.8 Chart Statement
+
+A `chart` statement renders **visual data** using a specified chart type.
+
+Each `series` is a named data sequence. Each `point` is a single `x, y` data pair.
+
+```ebnf
+ChartStatement  ::= "chart" Identifier ChartType "{" { SeriesDecl } "}"
+
+ChartType       ::= "bar" | "line" | "pie" | "area" | "scatter"
+
+SeriesDecl      ::= "series" String "{" { DataPoint } "}"
+
+DataPoint       ::= "point" CellValue "," CellValue
+
+CellValue       ::= Literal | Expression
+```
+
+| Part           | Required | Description                              |
+| -------------- | -------- | ---------------------------------------- |
+| Identifier     | Yes      | Chart name (unique within scope)         |
+| ChartType      | Yes      | Visual style: bar, line, pie, area, scatter |
+| `series` block | Yes (≥1) | Named sequence of data points            |
+| `point` x, y  | Yes (≥1) | Single (x, y) coordinate or category    |
+
+Example:
+
+```dsl
+chart MonthlySales line {
+  series "Revenue" {
+    point "Jan", 4200
+    point "Feb", 5800
+    point "Mar", 7100
+  }
+  series "Cost" {
+    point "Jan", 2100
+    point "Feb", 3000
+    point "Mar", 3500
+  }
+}
+```
+
+Pie charts use label/value pairs:
+
+```dsl
+chart TrafficSource pie {
+  series "Sources" {
+    point "Organic", 65
+    point "Paid",    20
+    point "Direct",  15
+  }
+}
 ```
 
 ---
@@ -418,6 +510,8 @@ Namespaces:
 * pages
 * components
 * actions
+* tables (within a page or component block)
+* charts (within a page or component block)
 
 ### SR-7: Query in Pages Only
 
@@ -437,6 +531,49 @@ Query parameter identifiers must be unique within a page
 Each key in a navigation QueryArgs list must match
 a query declaration on the target page
 ```
+
+### SR-10: Table Column Count Consistency
+
+```
+Every row in a table must have exactly as many cells
+as there are declared columns
+```
+
+Example of a violation:
+
+```dsl
+table Bad {
+  columns ["A", "B", "C"]
+  row ["x", "y"]         // error: 2 cells, 3 columns expected
+}
+```
+
+### SR-11: Table Must Have Columns
+
+```
+A table block must declare at least one column
+and at least one row
+```
+
+### SR-12: Chart Must Have at Least One Series
+
+```
+A chart block must contain at least one series declaration
+```
+
+### SR-13: Series Must Have at Least One Point
+
+```
+Each series block must contain at least one data point
+```
+
+### SR-14: Pie Chart Single Series
+
+```
+A pie chart may only contain a single series
+```
+
+Pie charts represent a whole divided into parts. Multiple series on a pie chart are undefined and rejected.
 
 ---
 
@@ -483,6 +620,42 @@ re-render
 ```
 
 State is reset unless persisted.
+
+---
+
+## 10.4 Table Rendering
+
+A table is rendered as a **two-dimensional grid**:
+
+```
+Render(Table):
+  render header row from columns[]
+  for each row:
+    render cells left-to-right
+```
+
+Cell values are evaluated lazily at render time. If a cell contains an expression, it is resolved against the current scope (`user`, `session`, `env`, `query`).
+
+---
+
+## 10.5 Chart Rendering
+
+A chart is rendered as a **visual data graphic** delegated to the compilation target:
+
+```
+Render(Chart):
+  resolve all point values
+  emit chart type + series data to target backend
+```
+
+The DSL does not prescribe pixel layout — that is the responsibility of the compilation target (e.g., React renders a `<Chart>` component; HTML emits a `<canvas>` block).
+
+Point values:
+
+* `x` axis — category label (String) or numeric position (Number)
+* `y` axis — numeric value (Number)
+
+For pie charts the `x` value is the **slice label** and `y` is the **slice size**.
 
 ---
 
@@ -538,12 +711,12 @@ The DSL is target-independent.
 
 Possible backends:
 
-| Target  | Mapping             |
-| ------- | ------------------- |
-| HTML    | Routes + templates  |
-| React   | Router + components |
-| Flutter | Navigator + Widgets |
-| SwiftUI | NavigationStack     |
+| Target  | Page / Component Mapping | Table Mapping       | Chart Mapping              |
+| ------- | ------------------------ | ------------------- | -------------------------- |
+| HTML    | Routes + templates       | `<table>` element   | `<canvas>` + Chart.js      |
+| React   | Router + components      | `<Table>` component | `<Chart>` component        |
+| Flutter | Navigator + Widgets      | `DataTable` widget  | `fl_chart` widget          |
+| SwiftUI | NavigationStack          | `Table` view        | `Swift Charts` view        |
 
 ---
 
@@ -558,6 +731,7 @@ page Home {
   header "Welcome"
   button "Log in" -> Login
   button "Search" -> Search?q=""&page=1
+  button "Dashboard" -> Dashboard
 }
 
 component LoginForm {
@@ -587,6 +761,33 @@ page Dashboard {
   text "Hello!"
   button "Logout" -> Home
   button "Search Items" -> Search?q=""&page=1
+
+  // Recent users table
+  table RecentUsers {
+    columns ["Name", "Role", "Last Seen"]
+    row ["Alice", "Admin",  "2 mins ago"]
+    row ["Bob",   "Viewer", "1 hour ago"]
+    row ["Carol", "Editor", "Yesterday"]
+  }
+
+  // Monthly activity chart
+  chart MonthlyLogins line {
+    series "Logins" {
+      point "Jan", 320
+      point "Feb", 410
+      point "Mar", 390
+      point "Apr", 520
+    }
+  }
+
+  // Traffic breakdown (pie)
+  chart TrafficSource pie {
+    series "Sources" {
+      point "Organic", 58
+      point "Paid",    27
+      point "Direct",  15
+    }
+  }
 }
 
 page Search {
@@ -618,6 +819,8 @@ This DSL guarantees:
 ✅ Static analyzability
 ✅ Framework independence
 ✅ AI-safe generation
+✅ Schema-checked tabular data
+✅ Declarative, backend-agnostic charts
 
 ---
 

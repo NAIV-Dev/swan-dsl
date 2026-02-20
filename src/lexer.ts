@@ -28,6 +28,20 @@ export const KEYWORDS = [
     "boolean",
     "true",
     "false",
+    // ── Table keywords ──────────────────────────────────────────────────────
+    "table",
+    "columns",
+    "row",
+    // ── Chart keywords ──────────────────────────────────────────────────────
+    "chart",
+    "series",
+    "point",
+    // ── Chart type keywords ─────────────────────────────────────────────────
+    "bar",
+    "line",
+    "pie",
+    "area",
+    "scatter",
 ] as const;
 
 export type Keyword = (typeof KEYWORDS)[number];
@@ -40,6 +54,9 @@ export type TokenType =
     | "ARROW"
     | "LBRACE"
     | "RBRACE"
+    | "LBRACKET"
+    | "RBRACKET"
+    | "COMMA"
     | "DOT"
     | "EQ"
     | "NEQ"
@@ -81,6 +98,9 @@ export const lexer = moo.compile({
     BANG: "!",
     LBRACE: "{",
     RBRACE: "}",
+    LBRACKET: "[",
+    RBRACKET: "]",
+    COMMA: ",",
     DOT: ".",
     COLON: ":",
     QUESTION: "?",

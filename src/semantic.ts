@@ -1,10 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // SWAN DSL — Semantic Checker
-// Enforces static semantic rules SR-1 through SR-9.
+// Enforces static semantic rules SR-1 through SR-14.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
     SemanticError,
+    type ChartStmt,
     type ComponentDecl,
     type ConditionalStmt,
     type HandlerStmt,
@@ -12,6 +13,7 @@ import {
     type PageDecl,
     type Program,
     type Statement,
+    type TableStmt,
 } from "./types";
 
 export interface SemanticCheckOptions {
@@ -59,6 +61,7 @@ class SemanticChecker {
         this.checkSR8UniqueQueryKeys();
         this.collectAndCheckNavTargets();
         this.checkSR5ComponentCycles();
+        this.checkSR10to14TablesAndCharts();
         if (this.options.strictMode) {
             this.checkSR4Reachability();
         }
@@ -124,6 +127,42 @@ class SemanticChecker {
         }
         for (const comp of this.program.components) {
             this.checkActionUniqueness(comp.name, comp.body);
+        }
+
+        // Table and chart names must be unique within each scope (page/component)
+        for (const page of this.program.pages) {
+            this.checkTableChartUniqueness(page.name, page.body);
+        }
+        for (const comp of this.program.components) {
+            this.checkTableChartUniqueness(comp.name, comp.body);
+        }
+    }
+
+    private checkTableChartUniqueness(scopeName: string, stmts: Statement[]): void {
+        const tablesSeen = new Set<string>();
+        const chartsSeen = new Set<string>();
+        for (const stmt of stmts) {
+            if (stmt.kind === "TableStmt") {
+                if (tablesSeen.has(stmt.name)) {
+                    throw new SemanticError(
+                        "SR-6",
+                        `Duplicate table name "${stmt.name}" in scope "${scopeName}"`,
+                        stmt.pos,
+                    );
+                }
+                tablesSeen.add(stmt.name);
+            } else if (stmt.kind === "ChartStmt") {
+                if (chartsSeen.has(stmt.name)) {
+                    throw new SemanticError(
+                        "SR-6",
+                        `Duplicate chart name "${stmt.name}" in scope "${scopeName}"`,
+                        stmt.pos,
+                    );
+                }
+                chartsSeen.add(stmt.name);
+            } else if (stmt.kind === "ConditionalStmt") {
+                this.checkTableChartUniqueness(scopeName, stmt.body);
+            }
         }
     }
 
@@ -374,6 +413,97 @@ class SemanticChecker {
             }
         }
         return used;
+    }
+
+    // ─── SR-10 – SR-14 (tables and charts) ────────────────────────────────────
+
+    private checkSR10to14TablesAndCharts(): void {
+        const allBodies: { scopeName: string; stmts: Statement[] }[] = [
+            ...this.program.pages.map((p) => ({ scopeName: p.name, stmts: p.body })),
+            ...this.program.components.map((c) => ({ scopeName: c.name, stmts: c.body })),
+        ];
+        for (const { scopeName, stmts } of allBodies) {
+            this.checkTableChartStmts(scopeName, stmts);
+        }
+    }
+
+    private checkTableChartStmts(scopeName: string, stmts: Statement[]): void {
+        for (const stmt of stmts) {
+            if (stmt.kind === "TableStmt") {
+                this.checkTableStmt(scopeName, stmt);
+            } else if (stmt.kind === "ChartStmt") {
+                this.checkChartStmt(scopeName, stmt);
+            } else if (stmt.kind === "ConditionalStmt") {
+                this.checkTableChartStmts(scopeName, stmt.body);
+            }
+        }
+    }
+
+    /**
+     * SR-11: at least one column and one row.
+     * SR-10: each row must have exactly as many cells as declared columns.
+     */
+    private checkTableStmt(scopeName: string, table: TableStmt): void {
+        // SR-11: must have ≥1 column
+        if (table.columns.length === 0) {
+            throw new SemanticError(
+                "SR-11",
+                `Table "${table.name}" in "${scopeName}" must declare at least one column`,
+                table.pos,
+            );
+        }
+        // SR-11: must have ≥1 row
+        if (table.rows.length === 0) {
+            throw new SemanticError(
+                "SR-11",
+                `Table "${table.name}" in "${scopeName}" must have at least one row`,
+                table.pos,
+            );
+        }
+        // SR-10: row cell count must match column count
+        for (const row of table.rows) {
+            if (row.cells.length !== table.columns.length) {
+                throw new SemanticError(
+                    "SR-10",
+                    `Table "${table.name}" in "${scopeName}": row has ${row.cells.length} cell(s) but ${table.columns.length} column(s) were declared`,
+                    row.pos,
+                );
+            }
+        }
+    }
+
+    /**
+     * SR-12: chart must have ≥1 series.
+     * SR-13: each series must have ≥1 point.
+     * SR-14: pie chart must have exactly 1 series.
+     */
+    private checkChartStmt(scopeName: string, chart: ChartStmt): void {
+        // SR-12: must have ≥1 series
+        if (chart.series.length === 0) {
+            throw new SemanticError(
+                "SR-12",
+                `Chart "${chart.name}" in "${scopeName}" must contain at least one series`,
+                chart.pos,
+            );
+        }
+        // SR-14: pie chart must have exactly 1 series
+        if (chart.chartType === "pie" && chart.series.length !== 1) {
+            throw new SemanticError(
+                "SR-14",
+                `Pie chart "${chart.name}" in "${scopeName}" must have exactly one series (got ${chart.series.length})`,
+                chart.pos,
+            );
+        }
+        // SR-13: each series must have ≥1 point
+        for (const s of chart.series) {
+            if (s.points.length === 0) {
+                throw new SemanticError(
+                    "SR-13",
+                    `Series "${s.label}" in chart "${chart.name}" (scope "${scopeName}") must have at least one data point`,
+                    s.pos,
+                );
+            }
+        }
     }
 
     // ─── SR-4 (strict mode) ───────────────────────────────────────────────────

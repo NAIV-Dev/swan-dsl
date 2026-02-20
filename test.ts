@@ -9,6 +9,7 @@ page Home {
   header "Welcome"
   button "Log in" -> Login
   button "Search" -> Search?q=""&page=1
+  button "Dashboard" -> Dashboard
 }
 
 component LoginForm {
@@ -38,6 +39,30 @@ page Dashboard {
   text "Hello!"
   button "Logout" -> Home
   button "Search Items" -> Search?q=""&page=1
+
+  table RecentUsers {
+    columns ["Name", "Role", "Last Seen"]
+    row ["Alice", "Admin",  "2 mins ago"]
+    row ["Bob",   "Viewer", "1 hour ago"]
+    row ["Carol", "Editor", "Yesterday"]
+  }
+
+  chart MonthlyLogins line {
+    series "Logins" {
+      point "Jan", 320
+      point "Feb", 410
+      point "Mar", 390
+      point "Apr", 520
+    }
+  }
+
+  chart TrafficSource pie {
+    series "Sources" {
+      point "Organic", 58
+      point "Paid",    27
+      point "Direct",  15
+    }
+  }
 }
 
 page Search {

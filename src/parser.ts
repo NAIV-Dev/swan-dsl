@@ -11,6 +11,10 @@ import {
     type BinaryOperator,
     type BooleanLiteral,
     type ButtonStmt,
+    type ChartPoint,
+    type ChartSeries,
+    type ChartStmt,
+    type ChartType,
     type ClickStmt,
     type ComponentDecl,
     type ConditionalStmt,
@@ -34,6 +38,8 @@ import {
     type Statement,
     type StringLiteral,
     type SubmitStmt,
+    type TableRow,
+    type TableStmt,
     type TextStmt,
     type UnaryExpr,
     type UseStmt,
@@ -233,6 +239,8 @@ export class Parser {
             case "on": return this.parseHandlerStmt();
             case "if": return this.parseConditionalStmt();
             case "query": return this.parseQueryStmt();
+            case "table": return this.parseTableStmt();
+            case "chart": return this.parseChartStmt();
             default:
                 throw new ParseError(
                     `Unexpected token "${tok.value}" — not a valid statement keyword`,
@@ -408,6 +416,131 @@ export class Parser {
             defaultValue,
             pos: this.tokenPos(kw),
         };
+    }
+
+    // -- Table statement -------------------------------------------------------
+
+    /**
+     * table <Name> {
+     *   columns ["Col1", "Col2", ...]
+     *   row [val1, val2, ...]
+     *   ...
+     * }
+     */
+    private parseTableStmt(): TableStmt {
+        const kw = this.expect("table");
+        const nameTok = this.expectIdent();
+        this.expect("LBRACE");
+
+        // -- columns declaration -----------------------------------------------
+        this.expect("columns");
+        this.expect("LBRACKET");
+        const columns: string[] = [];
+        if (!this.check("RBRACKET")) {
+            columns.push(this.expectString().value);
+            while (this.match("COMMA")) {
+                // allow trailing comma before ]
+                if (this.check("RBRACKET")) break;
+                columns.push(this.expectString().value);
+            }
+        }
+        this.expect("RBRACKET");
+
+        // -- rows --------------------------------------------------------------
+        const rows: TableRow[] = [];
+        while (this.check("row") && !this.isAtEnd()) {
+            rows.push(this.parseTableRow());
+        }
+
+        this.expect("RBRACE");
+
+        return {
+            kind: "TableStmt",
+            name: nameTok.value,
+            columns,
+            rows,
+            pos: this.tokenPos(kw),
+        };
+    }
+
+    private parseTableRow(): TableRow {
+        const kw = this.expect("row");
+        this.expect("LBRACKET");
+        const cells: Expression[] = [];
+        if (!this.check("RBRACKET")) {
+            cells.push(this.parseExpression());
+            while (this.match("COMMA")) {
+                if (this.check("RBRACKET")) break;
+                cells.push(this.parseExpression());
+            }
+        }
+        this.expect("RBRACKET");
+        return { cells, pos: this.tokenPos(kw) };
+    }
+
+    // -- Chart statement -------------------------------------------------------
+
+    /**
+     * chart <Name> <bar|line|pie|area|scatter> {
+     *   series "Label" {
+     *     point x, y
+     *     ...
+     *   }
+     *   ...
+     * }
+     */
+    private parseChartStmt(): ChartStmt {
+        const kw = this.expect("chart");
+        const nameTok = this.expectIdent();
+
+        // Chart type keyword
+        const typeTok = this.peek();
+        const CHART_TYPES = new Set(["bar", "line", "pie", "area", "scatter"]);
+        if (!typeTok || !CHART_TYPES.has(typeTok.type ?? "")) {
+            const pos = typeTok ? this.tokenPos(typeTok) : this.currentPos();
+            const got = typeTok ? `"${typeTok.value}"` : "end of input";
+            throw new ParseError(
+                `Expected chart type (bar | line | pie | area | scatter) but got ${got}`,
+                pos,
+            );
+        }
+        this.advance();
+        const chartType = typeTok.value as ChartType;
+
+        this.expect("LBRACE");
+        const seriesList: ChartSeries[] = [];
+        while (this.check("series") && !this.isAtEnd()) {
+            seriesList.push(this.parseSeriesDecl());
+        }
+        this.expect("RBRACE");
+
+        return {
+            kind: "ChartStmt",
+            name: nameTok.value,
+            chartType,
+            series: seriesList,
+            pos: this.tokenPos(kw),
+        };
+    }
+
+    private parseSeriesDecl(): ChartSeries {
+        const kw = this.expect("series");
+        const labelTok = this.expectString();
+        this.expect("LBRACE");
+        const points: ChartPoint[] = [];
+        while (this.check("point") && !this.isAtEnd()) {
+            points.push(this.parseChartPoint());
+        }
+        this.expect("RBRACE");
+        return { label: labelTok.value, points, pos: this.tokenPos(kw) };
+    }
+
+    private parseChartPoint(): ChartPoint {
+        const kw = this.expect("point");
+        const x = this.parseExpression();
+        this.expect("COMMA");
+        const y = this.parseExpression();
+        return { x, y, pos: this.tokenPos(kw) };
     }
 
     // ─── Navigation target ────────────────────────────────────────────────────
@@ -681,6 +814,10 @@ export class Parser {
                 "button", "link", "field", "input", "submit", "click", "on", "if",
                 "query", "string", "number", "boolean",
                 "true", "false", // generally disallowed as ident elsewhere; allowed in outcomes
+                // table / chart keywords can appear as names
+                "table", "columns", "row",
+                "chart", "series", "point",
+                "bar", "line", "pie", "area", "scatter",
             ].includes(tokType);
 
         if (!isIdentLike) {

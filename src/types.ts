@@ -224,6 +224,97 @@ export interface QueryStmt {
     pos: Position;
 }
 
+// ---------------------------------------------------------------------------
+// Table statement
+// ---------------------------------------------------------------------------
+
+/**
+ * A single row inside a `table` block.
+ * The number of cells must equal the number of declared columns (SR-10).
+ */
+export interface TableRow {
+    cells: Expression[];
+    pos: Position;
+}
+
+/**
+ * Renders tabular data with named columns.
+ *
+ * Syntax:
+ * ```dsl
+ * table <Name> {
+ *   columns ["Col1", "Col2"]
+ *   row     [val1,  val2 ]
+ * }
+ * ```
+ *
+ * Semantic rules: SR-10, SR-11.
+ */
+export interface TableStmt {
+    kind: "TableStmt";
+    /** Unique table name within its scope */
+    name: string;
+    /** Ordered column header labels */
+    columns: string[];
+    /** Data rows — each must have the same number of cells as `columns` */
+    rows: TableRow[];
+    pos: Position;
+}
+
+// ---------------------------------------------------------------------------
+// Chart statement
+// ---------------------------------------------------------------------------
+
+/** Visual style of a chart (§ 6.8). */
+export type ChartType = "bar" | "line" | "pie" | "area" | "scatter";
+
+/**
+ * A single data point inside a `series` block.
+ *
+ * - `x` — category label (string) or numeric position
+ * - `y` — numeric value
+ */
+export interface ChartPoint {
+    x: Expression;
+    y: Expression;
+    pos: Position;
+}
+
+/**
+ * A named series of data points inside a `chart` block.
+ * Must have at least one point (SR-13).
+ */
+export interface ChartSeries {
+    /** Display label for this series */
+    label: string;
+    points: ChartPoint[];
+    pos: Position;
+}
+
+/**
+ * Renders a visual chart.
+ *
+ * Syntax:
+ * ```dsl
+ * chart <Name> <bar|line|pie|area|scatter> {
+ *   series "Label" {
+ *     point x, y
+ *   }
+ * }
+ * ```
+ *
+ * Semantic rules: SR-12, SR-13, SR-14.
+ */
+export interface ChartStmt {
+    kind: "ChartStmt";
+    /** Unique chart name within its scope */
+    name: string;
+    chartType: ChartType;
+    /** At least one series is required (SR-12) */
+    series: ChartSeries[];
+    pos: Position;
+}
+
 export type Statement =
     | HeaderStmt
     | TextStmt
@@ -236,7 +327,9 @@ export type Statement =
     | ClickStmt
     | HandlerStmt
     | ConditionalStmt
-    | QueryStmt;
+    | QueryStmt
+    | TableStmt
+    | ChartStmt;
 
 // ---------------------------------------------------------------------------
 // Top-level declarations
@@ -297,7 +390,14 @@ export type SemanticRuleCode =
     | "SR-6"
     | "SR-7"
     | "SR-8"
-    | "SR-9";
+    | "SR-9"
+    // Table rules
+    | "SR-10"  // Row cell count must equal column count
+    | "SR-11"  // Table must have ≥1 column and ≥1 row
+    // Chart rules
+    | "SR-12"  // Chart must have ≥1 series
+    | "SR-13"  // Each series must have ≥1 point
+    | "SR-14"; // Pie chart must have exactly 1 series
 
 export class SemanticError extends Error {
     constructor(
