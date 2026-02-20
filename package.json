@@ -1,0 +1,28 @@
+{
+  "name": "@naiv/swan-dsl",
+  "version": "0.0.1",
+  "description": "SWAN DSL Parser",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "test": "node dist"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/moo": "^0.5.10",
+    "@types/node": "^25.3.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "moo": "^0.5.2"
+  }
+}
