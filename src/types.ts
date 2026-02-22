@@ -158,15 +158,27 @@ export interface LinkStmt {
     pos: Position;
 }
 
+export type InputType =
+    | "text"
+    | "password"
+    | "email"
+    | "number"
+    | "date"
+    | "boolean"
+    | "dropdown"
+    | "radio";
+
 export interface FieldStmt {
     kind: "FieldStmt";
     name: string;
+    inputType?: InputType;
     pos: Position;
 }
 
 export interface InputStmt {
     kind: "InputStmt";
     name: string;
+    inputType?: InputType;
     pos: Position;
 }
 

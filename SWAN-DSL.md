@@ -190,10 +190,12 @@ UIStatement ::=
   | "text" String
   | "button" String [ NavTarget ]
   | "link" String NavTarget
-  | "field" Identifier
-  | "input" Identifier
+  | "field" Identifier [ ":" InputType ]
+  | "input" Identifier [ ":" InputType ]
   | TableStatement
   | ChartStatement
+
+InputType ::= "text" | "password" | "email" | "number" | "date" | "boolean" | "dropdown" | "radio" | "checkbox"
 ```
 
 Example:
@@ -743,8 +745,8 @@ page Home {
 }
 
 component LoginForm {
-  field email
-  field password
+  field email : email
+  field password : password
 
   submit "Continue" -> auth
 

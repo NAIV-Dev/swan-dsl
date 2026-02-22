@@ -28,6 +28,11 @@ export const KEYWORDS = [
     "boolean",
     "true",
     "false",
+    "password",
+    "email",
+    "date",
+    "dropdown",
+    "radio",
     // ── Table keywords ──────────────────────────────────────────────────────
     "table",
     "columns",

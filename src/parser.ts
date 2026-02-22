@@ -24,6 +24,7 @@ import {
     type HeaderStmt,
     type IdentifierExpr,
     type InputStmt,
+    type InputType,
     type LinkStmt,
     type MemberExpr,
     type NavTarget,
@@ -282,16 +283,37 @@ export class Parser {
         return { kind: "LinkStmt", label: str.value, nav, pos: this.tokenPos(kw) };
     }
 
+    private readonly INPUT_TYPES = new Set<string>([
+        "text", "password", "email", "number", "date", "boolean", "dropdown", "radio",
+    ]);
+
+    private parseOptionalInputType(): InputType | undefined {
+        if (!this.match("COLON")) return undefined;
+        const typeTok = this.peek();
+        if (!typeTok || !this.INPUT_TYPES.has(typeTok.type ?? "")) {
+            const pos = typeTok ? this.tokenPos(typeTok) : this.currentPos();
+            const got = typeTok ? `"${typeTok.value}"` : "end of input";
+            throw new ParseError(
+                `Expected input type (text | password | email | number | date | boolean | dropdown | radio) after ":" but got ${got}`,
+                pos,
+            );
+        }
+        this.advance();
+        return typeTok.value as InputType;
+    }
+
     private parseFieldStmt(): FieldStmt {
         const kw = this.expect("field");
         const id = this.expectIdent();
-        return { kind: "FieldStmt", name: id.value, pos: this.tokenPos(kw) };
+        const inputType = this.parseOptionalInputType();
+        return { kind: "FieldStmt", name: id.value, inputType, pos: this.tokenPos(kw) };
     }
 
     private parseInputStmt(): InputStmt {
         const kw = this.expect("input");
         const id = this.expectIdent();
-        return { kind: "InputStmt", name: id.value, pos: this.tokenPos(kw) };
+        const inputType = this.parseOptionalInputType();
+        return { kind: "InputStmt", name: id.value, inputType, pos: this.tokenPos(kw) };
     }
 
     // -- Component use ---------------------------------------------------------
@@ -829,7 +851,9 @@ export class Parser {
                 "table", "columns", "row",
                 "chart", "series", "point",
                 "bar", "line", "pie", "area", "scatter",
-            ].includes(tokType);
+            ].includes(tokType) ||
+            // input-type keywords may also appear as field/input names
+            ["text", "password", "email", "date", "dropdown", "radio"].includes(tokType);
 
         if (!isIdentLike) {
             throw new ParseError(
