@@ -188,7 +188,7 @@ Statement ::=
 UIStatement ::=
     "header" String
   | "text" String
-  | "button" String NavTarget
+  | "button" String [ NavTarget ]
   | "link" String NavTarget
   | "field" Identifier
   | "input" Identifier
@@ -220,20 +220,27 @@ ColumnName      ::= String
 
 TableRows       ::= { TableRow }
 
-TableRow        ::= "row" "[" CellValue { "," CellValue } "]"
+TableRow        ::= "row" "[" CellValue { "," CellValue } "]" [ Block ]
 
 CellValue       ::= Literal | Expression
 ```
 
 Example:
 
-```dsl
 table UserList {
-  columns ["Name", "Role", "Status"]
-  row ["Alice", "Admin",  "Active"]
-  row ["Bob",   "Viewer", "Inactive"]
+  columns ["Name", "Role", "Status", "Actions"]
+  row ["Alice", "Admin",  "Active"] {
+    button "Edit" -> EditUser?id="Alice"
+    button "Delete" // Explains action without navigation
+  }
+  row ["Bob",   "Viewer", "Inactive"] {
+    button "Edit" -> EditUser?id="Bob"
+    button "Delete"
+  }
 }
 ```
+
+A `TableRow` may optionally be followed by a **block** of statements. This block semantically represents the actions available for that specific row. For instance, it can contain `button`, `submit`, or `click` statements that apply to the record represented by the row.
 
 The table identifier (`UserList`) names the table for semantic checking. It does **not** introduce a navigable scope.
 
@@ -461,6 +468,7 @@ Example:
 
 ```dsl
 button "Next Page" -> Search?q="hello"&page=2
+button "Save" // Does not navigate
 ```
 
 ---
@@ -764,10 +772,19 @@ page Dashboard {
 
   // Recent users table
   table RecentUsers {
-    columns ["Name", "Role", "Last Seen"]
-    row ["Alice", "Admin",  "2 mins ago"]
-    row ["Bob",   "Viewer", "1 hour ago"]
-    row ["Carol", "Editor", "Yesterday"]
+    columns ["Name", "Role", "Last Seen", "Actions"]
+    row ["Alice", "Admin",  "2 mins ago"] {
+      button "Edit" -> EditUser?id="Alice"
+      button "Delete"
+    }
+    row ["Bob",   "Viewer", "1 hour ago"] {
+      button "Edit" -> EditUser?id="Bob"
+      button "Delete"
+    }
+    row ["Carol", "Editor", "Yesterday"] {
+      button "Edit" -> EditUser?id="Carol"
+      button "Delete"
+    }
   }
 
   // Monthly activity chart

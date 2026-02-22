@@ -1,6 +1,6 @@
 {
   "name": "@naiv/swan-dsl",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "SWAN DSL Parser",
   "main": "dist/src/index.js",
   "scripts": {

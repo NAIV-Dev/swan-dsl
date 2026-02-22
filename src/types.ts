@@ -147,7 +147,7 @@ export interface TextStmt {
 export interface ButtonStmt {
     kind: "ButtonStmt";
     label: string;
-    nav: NavTarget;
+    nav?: NavTarget;
     pos: Position;
 }
 
@@ -231,9 +231,11 @@ export interface QueryStmt {
 /**
  * A single row inside a `table` block.
  * The number of cells must equal the number of declared columns (SR-10).
+ * A row may optionally declare a block of statements (actions).
  */
 export interface TableRow {
     cells: Expression[];
+    actions?: Statement[];
     pos: Position;
 }
 

@@ -266,7 +266,12 @@ export class Parser {
     private parseButtonStmt(): ButtonStmt {
         const kw = this.expect("button");
         const str = this.expectString();
-        const nav = this.parseNavTarget();
+
+        let nav: NavTarget | undefined;
+        if (this.check("ARROW")) {
+            nav = this.parseNavTarget();
+        }
+
         return { kind: "ButtonStmt", label: str.value, nav, pos: this.tokenPos(kw) };
     }
 
@@ -475,7 +480,13 @@ export class Parser {
             }
         }
         this.expect("RBRACKET");
-        return { cells, pos: this.tokenPos(kw) };
+
+        let actions: Statement[] | undefined;
+        if (this.check("LBRACE")) {
+            actions = this.parseBlock();
+        }
+
+        return { cells, actions, pos: this.tokenPos(kw) };
     }
 
     // -- Chart statement -------------------------------------------------------

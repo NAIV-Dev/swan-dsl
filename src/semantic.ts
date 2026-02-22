@@ -151,6 +151,11 @@ class SemanticChecker {
                     );
                 }
                 tablesSeen.add(stmt.name);
+                for (const row of stmt.rows) {
+                    if (row.actions) {
+                        this.checkTableChartUniqueness(scopeName, row.actions);
+                    }
+                }
             } else if (stmt.kind === "ChartStmt") {
                 if (chartsSeen.has(stmt.name)) {
                     throw new SemanticError(
@@ -175,6 +180,15 @@ class SemanticChecker {
             if (stmt.kind === "ConditionalStmt") {
                 for (const [k, v] of this.collectActions(stmt.body)) {
                     actions.set(k, (actions.get(k) ?? 0) + v);
+                }
+            }
+            if (stmt.kind === "TableStmt") {
+                for (const row of stmt.rows) {
+                    if (row.actions) {
+                        for (const [k, v] of this.collectActions(row.actions)) {
+                            actions.set(k, (actions.get(k) ?? 0) + v);
+                        }
+                    }
                 }
             }
         }
@@ -217,6 +231,13 @@ class SemanticChecker {
             if (stmt.kind === "ConditionalStmt") {
                 this.assertNoQueryInStatements(scopeName, stmt.body);
             }
+            if (stmt.kind === "TableStmt") {
+                for (const row of stmt.rows) {
+                    if (row.actions) {
+                        this.assertNoQueryInStatements(scopeName, row.actions);
+                    }
+                }
+            }
         }
     }
 
@@ -256,6 +277,13 @@ class SemanticChecker {
             if (stmt.kind === "ConditionalStmt") {
                 this.collectQueryKeys(stmt.body, pageName, seen, paramSet);
             }
+            if (stmt.kind === "TableStmt") {
+                for (const row of stmt.rows) {
+                    if (row.actions) {
+                        this.collectQueryKeys(row.actions, pageName, seen, paramSet);
+                    }
+                }
+            }
         }
     }
 
@@ -281,6 +309,10 @@ class SemanticChecker {
     private checkNavInStatement(stmt: Statement): void {
         switch (stmt.kind) {
             case "ButtonStmt":
+                if (stmt.nav) {
+                    this.validateNavTarget(stmt.nav);
+                }
+                break;
             case "LinkStmt":
                 this.validateNavTarget(stmt.nav);
                 break;
@@ -289,6 +321,13 @@ class SemanticChecker {
                 break;
             case "ConditionalStmt":
                 this.checkNavInStatements(stmt.body);
+                break;
+            case "TableStmt":
+                for (const row of stmt.rows) {
+                    if (row.actions) {
+                        this.checkNavInStatements(row.actions);
+                    }
+                }
                 break;
             // SubmitStmt and ClickStmt target actions, not pages directly
             default:
@@ -411,6 +450,13 @@ class SemanticChecker {
             if (stmt.kind === "ConditionalStmt") {
                 used.push(...this.collectUsedComponents(stmt.body));
             }
+            if (stmt.kind === "TableStmt") {
+                for (const row of stmt.rows) {
+                    if (row.actions) {
+                        used.push(...this.collectUsedComponents(row.actions));
+                    }
+                }
+            }
         }
         return used;
     }
@@ -436,6 +482,13 @@ class SemanticChecker {
             } else if (stmt.kind === "ConditionalStmt") {
                 this.checkTableChartStmts(scopeName, stmt.body);
             }
+            if (stmt.kind === "TableStmt") {
+                for (const row of stmt.rows) {
+                    if (row.actions) {
+                        this.checkTableChartStmts(scopeName, row.actions);
+                    }
+                }
+            }
         }
     }
 
@@ -460,12 +513,16 @@ class SemanticChecker {
                 table.pos,
             );
         }
-        // SR-10: row cell count must match column count
+        // SR-10: row cell count must match column count (or column count - 1 if actions block is present)
         for (const row of table.rows) {
-            if (row.cells.length !== table.columns.length) {
+            const expected = table.columns.length;
+            const actual = row.cells.length;
+            const hasActions = row.actions !== undefined;
+
+            if (actual !== expected && !(hasActions && actual === expected - 1)) {
                 throw new SemanticError(
                     "SR-10",
-                    `Table "${table.name}" in "${scopeName}": row has ${row.cells.length} cell(s) but ${table.columns.length} column(s) were declared`,
+                    `Table "${table.name}" in "${scopeName}": row has ${actual} cell(s) but ${expected} column(s) were declared (with actions block: ${hasActions})`,
                     row.pos,
                 );
             }
@@ -520,7 +577,10 @@ class SemanticChecker {
         const navTargetsOf = (stmts: Statement[]): string[] => {
             const targets: string[] = [];
             for (const stmt of stmts) {
-                if (stmt.kind === "ButtonStmt" || stmt.kind === "LinkStmt") {
+                if (stmt.kind === "ButtonStmt" && stmt.nav) {
+                    targets.push(stmt.nav.target);
+                }
+                if (stmt.kind === "LinkStmt") {
                     targets.push(stmt.nav.target);
                 }
                 if (stmt.kind === "HandlerStmt") {
@@ -528,6 +588,13 @@ class SemanticChecker {
                 }
                 if (stmt.kind === "ConditionalStmt") {
                     targets.push(...navTargetsOf(stmt.body));
+                }
+                if (stmt.kind === "TableStmt") {
+                    for (const row of stmt.rows) {
+                        if (row.actions) {
+                            targets.push(...navTargetsOf(row.actions));
+                        }
+                    }
                 }
             }
             return targets;
